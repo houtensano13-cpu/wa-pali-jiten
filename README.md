@@ -9,7 +9,7 @@
 - **そのままブラウザで使う**: GitHub Pages のページを開く（公開URLは下記）
 - **オフラインで使う**: [Releases](../../releases) から `pali-dictionary-and-sentence-maker.html` をダウンロードし、ブラウザで開く
 
-公開URL: `https://（ユーザー名）.github.io/（リポジトリ名）/`
+公開URL: `https://houtensano13-cpu.github.io/wa-pali-jiten/`
 
 ## ご注意
 
