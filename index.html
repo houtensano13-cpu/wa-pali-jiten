@@ -937,7 +937,7 @@ body {
       placeholder="例）私は寺で経を読みます　／　猫が家にいます　／　彼は親切です"></textarea>
     <button type="button" id="auto-translate-btn" class="build-btn">パーリ語に変換する</button>
     <div class="result-box" id="result-auto" hidden></div>
-    <p class="version-stamp">版：2026-09-28-3（表示が古いときは、ページを再読み込みしてください）</p>
+    <p class="version-stamp">版：2026-10-27-1（表示が古いときは、ページを再読み込みしてください）</p>
   </section>
 
   <!-- ===================== 手動モード (詳しく指定する) ===================== -->
@@ -2149,6 +2149,7 @@ const JP_INDEX = {"ＣＤプレーヤー":[0],"ＣＤプレイヤー":[0],"シ�
     [["使う"], "paribhuñjati", "v", "uses"],
     [["探す", "捜す"], "gavesati", "v", "seeks"],
     [["拝む", "礼拝する"], "vandati", "v", ""],
+    [["祈る", "いのる"], "āyācati", "v", "prays"],
     [["説く"], "deseti", "v", "preaches"],
     [["悟る"], "bujjhati", "v", ""],
     [["愛する"], "piyāyati", "v", ""],
@@ -2414,6 +2415,20 @@ const JP_INDEX = {"ＣＤプレーヤー":[0],"ＣＤプレイヤー":[0],"シ�
         role: gCase === "dat" ? "相手（〜に）" : "目的地（〜に）", jp: labelOf(opts.goal), pali: gf,
         note: gCase === "dat" ? "与格（受け手）" : "対格（行き先）"
       });
+    }
+
+    if (opts.benef) {
+      // 「〜のために」は、その人の属格に atthāya (〜のために・〜の利益のために)
+      // を続ける決まった言い方で表す (例: tava atthāya = あなたのために)。
+      var bf = declineSlotValue(opts.benef, "gen", warnings);
+      if (bf) {
+        var benefPhrase = bf + " atthāya";
+        words.push(benefPhrase);
+        breakdown.push({
+          role: "相手のため（〜のために）", jp: labelOf(opts.benef), pali: benefPhrase,
+          note: "属格＋atthāya（〜のために）"
+        });
+      }
     }
 
     var tense = opts.tense;
@@ -2890,9 +2905,22 @@ const JP_INDEX = {"ＣＤプレーヤー":[0],"ＣＤプレイヤー":[0],"シ�
     // 助詞付きで来た場合 (例:「今日は」) は、主語などとして扱わず
     // 時の不変化詞として別に取り出す。
     var timeEntries = tk.timeWords.map(function (w) { return { jp: w, pali: PP.TIME_WORDS[w] }; });
-    var subjChunk = null, objChunk = null, locChunk = null, goalChunk = null;
+    // 「Xのために」は「Xの」と「ために」の2チャンクに分かれてしまうため、
+    // ここで1つの「ために」チャンクにまとめ直す (訳し方は下の benef を参照)。
+    var mergedChunks = [];
+    for (var ci = 0; ci < tk.chunks.length; ci++) {
+      var cc = tk.chunks[ci];
+      var nn = tk.chunks[ci + 1];
+      if (cc.particle === "の" && nn && nn.word === "ため" && nn.particle === "に") {
+        mergedChunks.push({ word: cc.word, particle: "のために", plural: cc.plural, isPronoun: cc.isPronoun });
+        ci++;
+      } else {
+        mergedChunks.push(cc);
+      }
+    }
+    var subjChunk = null, objChunk = null, locChunk = null, goalChunk = null, benefChunk = null;
     var extraChunks = [];
-    tk.chunks.forEach(function (c) {
+    mergedChunks.forEach(function (c) {
       if (!c.isPronoun && PP.TIME_WORDS[c.word]) {
         timeEntries.push({ jp: c.word, pali: PP.TIME_WORDS[c.word] });
         return;
@@ -2901,6 +2929,7 @@ const JP_INDEX = {"ＣＤプレーヤー":[0],"ＣＤプレイヤー":[0],"シ�
       else if (c.particle === "を" && !objChunk) objChunk = c;
       else if (c.particle === "で" && !locChunk) locChunk = c;
       else if ((c.particle === "に" || c.particle === "へ") && !goalChunk) goalChunk = c;
+      else if (c.particle === "のために" && !benefChunk) benefChunk = c;
       else extraChunks.push(c);
     });
     if (extraChunks.length) {
@@ -2938,10 +2967,12 @@ const JP_INDEX = {"ＣＤプレーヤー":[0],"ＣＤプレイヤー":[0],"シ�
     var objVal = objChunk ? chunkToValue(objChunk, NOUN_POS) : null;
     var locVal = locChunk ? chunkToValue(locChunk, NOUN_POS) : null;
     var goalVal = goalChunk ? chunkToValue(goalChunk, NOUN_POS) : null;
+    var benefVal = benefChunk ? chunkToValue(benefChunk, NOUN_POS) : null;
 
     var result;
 
     if (pred.kind === "copula") {
+      if (benefVal) warnings.push("「" + benefChunk.word + "のために」はこの文型では扱いきれず、無視されました。");
       var predVal = resolveWord(pred.copulaComplement, NOUN_POS.concat(["adj"]), warnings);
       if (!predVal) {
         return { error: "「" + pred.copulaComplement + "」に対応するパーリ語が見つかりませんでした。", warnings: warnings };
@@ -2950,6 +2981,7 @@ const JP_INDEX = {"ＣＤプレーヤー":[0],"ＣＤプレイヤー":[0],"シ�
         subj: subjVal, pred: predVal, tense: pred.tense, polarity: pred.polarity
       });
     } else if (pred.kind === "adjective") {
+      if (benefVal) warnings.push("「" + benefChunk.word + "のために」はこの文型では扱いきれず、無視されました。");
       var adjVal = resolveWord(pred.baseForm, ["adj"], warnings);
       if (!adjVal) {
         return { error: "「" + pred.baseForm + "」に対応する形容詞が見つかりませんでした。", warnings: warnings };
@@ -2960,6 +2992,7 @@ const JP_INDEX = {"ＣＤプレーヤー":[0],"ＣＤプレイヤー":[0],"シ�
     } else {
       // pred.kind === "verb"
       if (pred.baseForm === "ある" || pred.baseForm === "いる") {
+        if (benefVal) warnings.push("「" + benefChunk.word + "のために」はこの文型では扱いきれず、無視されました。");
         var existLoc = locVal || goalVal;
         if (!existLoc) {
           return { error: "「〜に」で場所を示してください（例：家に猫がいる）。", warnings: warnings };
@@ -2983,7 +3016,7 @@ const JP_INDEX = {"ＣＤプレーヤー":[0],"ＣＤプレイヤー":[0],"シ�
         }
         var gCase = goalVal ? goalCaseFor(pred.baseForm) : null;
         result = SA.buildActionSentence({
-          subj: subjVal, verb: verbVal, obj: objVal, loc: locVal, goal: goalVal, goalCase: gCase,
+          subj: subjVal, verb: verbVal, obj: objVal, loc: locVal, goal: goalVal, goalCase: gCase, benef: benefVal,
           tense: pred.tense, polarity: pred.polarity, mood: pred.mood
         });
       }
